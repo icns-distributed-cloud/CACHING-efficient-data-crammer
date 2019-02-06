@@ -1,5 +1,3 @@
-#!/usr/bin/python
-#
 # This file is part of Qualified Caching-as-a-Service.
 # Copyright 2019 Intelligent-distributed Cloud and Security Laboratory (ICNS Lab.)
 #
