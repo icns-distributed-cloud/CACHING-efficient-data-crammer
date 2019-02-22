@@ -41,6 +41,7 @@ class PIDController:
         self.sample_time = 0.00
         self.current_time = time.time()
         self.last_time = self.current_time
+        self.last_counter = 0
 
         self.setpoint = 0.0
 
@@ -54,7 +55,7 @@ class PIDController:
 
         self.output = 0.0
 
-    def compute(self, feedback_value):
+    def compute_by_time_(self, feedback_value):
         """Calculates PID value for given reference feedback
            The formula is shown in PID controller from Wikipedia (https://en.wikipedia.org/wiki/PID_controller)
         """
@@ -64,6 +65,7 @@ class PIDController:
         if delta_time >= self.sample_time:
             # compute term_p
             error = self.setpoint - feedback_value
+            # error = feedback_value
             self.__term_p = error
 
             # compute term_i
@@ -74,11 +76,37 @@ class PIDController:
             delta_error = error - self.last_error
             self.__term_d = delta_error / delta_time  # / delta_time or number of iteration(?)
 
+            self.output = self.__term_p + (self.k_i * self.__term_i) + (self.k_d * self.__term_d)
+
             # Remember last time and last error for next calculation
             self.last_time = self.current_time
             self.last_error = error
 
-            self.output = self.__term_p + (self.k_i * self.__term_i) + (self.k_d * self.__term_d)
+    def compute_by_cycle(self, feedback_value, counter):
+        """Calculates PID value for given reference feedback
+           The formula is shown in PID controller from Wikipedia (https://en.wikipedia.org/wiki/PID_controller)
+        """
+
+        delta_counter = counter - self.last_counter  # time or number of iteration
+
+        # compute term_p
+        error = self.setpoint - feedback_value
+        # error = feedback_value
+        self.__term_p = error
+
+        # compute term_i
+        # it includes avoiding excess_overshooting_threshold on the setter method
+        self.__term_i += error * delta_counter  # * delta_time or number of iteration(?)
+
+        # compute term_d
+        delta_error = error - self.last_error
+        self.__term_d = delta_error / delta_counter  # / delta_time or number of iteration(?)
+
+        self.output = self.__term_p + (self.k_i * self.__term_i) + (self.k_d * self.__term_d)
+
+        # Remember last time and last error for next calculation
+        self.last_counter = counter
+        self.last_error = error
 
     @property
     def term_i(self):
