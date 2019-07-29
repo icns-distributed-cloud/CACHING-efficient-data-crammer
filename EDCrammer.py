@@ -28,6 +28,8 @@
 """
 In order to test PIDController, test_pid.py from IvPID is used with a few modifications.
 """
+import csv
+import os
 import threading
 import time
 
@@ -35,32 +37,42 @@ import matplotlib.pyplot as plt
 import numpy as np
 import paho.mqtt.client as mqtt
 from paho.mqtt import publish
-from scipy.interpolate import make_interp_spline  # Switched to BSpline
 
 import PIDController
 
 SDC_id = "SDC_1"
 is_finish = False
 
+MQTT_HOST = "163.180.117.236"
+MQTT_PORT = 1883
+
 # Gains from professor's paper : -0.5, 0.125, -0.125
 # Gains from Internet : 1.2, 2, 0.001
-k_p = 2
-k_i = 0
-k_d = 0
+# My previous gains: 0.8, 3, 0.004
+# from CMU 3, 0.8, 0.7
+k_p = 0.7
+k_i = 0.5  # 0.45
+k_d = 0.7  # 1.5
 L = 100
 
-pid = PIDController.PIDController(k_p, k_i, k_d)
+CACHE_MAX_SIZE = (5 << 20)  # - (1 << 19)  # 1 << 19 == 512KB
+SAMPLE_TIME = 0.025
+MASS = 10
 
-pid.setpoint = (1 << 20) * 0.9
-pid.sample_time = 0.1
+pid = PIDController.PIDController(k_p=k_p, k_i=k_i, k_d=k_d, setpoint=CACHE_MAX_SIZE * 0.9,
+                                  remaining_ratio_upto_the_max=0.1)
 
 END = L
 feedback = 0
 counter = 1
 
 feedback_list = []
+percentage_feedback_list = []
+output_list = []
+percentage_output_list = []
 time_list = []
 setpoint_list = []
+percentage_setpoint_list = []
 
 lock = threading.Lock()
 """Self-test PID class
@@ -77,13 +89,20 @@ lock = threading.Lock()
     ---
 """
 
+test_start_time = 0
+test_end_time = 0
+scenario_counter = 1
+
 
 # -------------------------------------------------------MQTT--------------------------------------------------------#
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
         print("Connected - Result code: " + str(rc))
         client.subscribe("core/edge/" + SDC_id + "/feedback")
+        client.subscribe("core/edge/" + SDC_id + "/init_for_testing")
         client.subscribe("core/edge/" + SDC_id + "/done_to_test")
+        client.subscribe("core/edge/" + SDC_id + "/all_test_complete")
+
 
     else:
         print("Bad connection returned code = ", rc)
@@ -96,45 +115,138 @@ def on_message(client, userdata, msg):
     global counter
     global is_finish
     global feedback_list
+    global percentage_feedback_list
+    global output_list
+    global percentage_output_list
     global time_list
     global setpoint_list
+    global percentage_setpoint_list
     global lock
+    global test_start_time
+    global test_end_time
+    global scenario_counter
+
+    # compensated_feedback = 0.0
 
     lock.acquire()
     message = str(msg.payload.decode("utf-8"))
-    print("Arrived topic: %s" % msg.topic)
+    print("\nArrived topic: %s" % msg.topic)
     print("Arrived message: %s" % message)
 
     if msg.topic == "core/edge/" + SDC_id + "/feedback":
         # compute feedback
+        counter += 1
         feedback = float(message)
         print("feedback: %s" % feedback)
-        pid.compute_by_cycle(feedback, counter)
+        pid.cyclic_compute_basic(feedback, counter)
         output = pid.output
-        compensated_feedback = feedback + output - (1 / counter)  # / counter???
-        # feedback += output
-        print("Feedback: %s /// Output: %s /// Compensated feedback: %s" % (feedback, output, compensated_feedback))
 
-        feedback_list.append(compensated_feedback)
-        setpoint_list.append(pid.setpoint)
-        time_list.append(counter)
+        # if pid.setpoint > 0:
+        #     compensated_feedback = feedback + output - (1 / counter)  # / counter???
+        # if counter > 9:
+        #     pid.setpoint = CACHE_MAX_SIZE * 0.9
 
-        counter += 1
+        # target_utilization = output * pid.delta_time + feedback
+
+        # compensated_feedback = feedback + output - (1 / counter)  # / counter???
+        # compensated_feedback = (target_utilization - feedback) / pid.delta_time
+        # compensated_feedback = target_utilization
+        # print("Feedback: %s /// Output: %s /// Target_utilization: %s /// Compensated feedback: %s" %
+        #       (feedback, output, target_utilization, compensated_feedback))
+
+        # compensated_feedback = output
+
+        # Value chart
+        # feedback_list.append(compensated_feedback)
+        # setpoint_list.append(pid.setpoint)
+        # Percentage chart
 
         # feedback is lower than 0... problem
-        if feedback > 0:
+        print("Output: %s" % output)
+        if output != 0:
             # split and distribute data
-            f = open("10MB.zip", "rb")
-            data = f.read(int(compensated_feedback))
-            print(len(data))
-            publish.single("core/edge/" + SDC_id + "/data", data, hostname="163.180.117.37", port=1883)
+            f = open("100MB.zip", "rb")
+            data = f.read(int(output))
+            print("Cram %s of data" % len(data))
+            publish.single("core/edge/" + SDC_id + "/data", data, hostname=MQTT_HOST, port=MQTT_PORT, qos=2)
+
+            # print("Cram %s of data" % int(output))
+            # publish.single("core/edge/" + SDC_id + "/data", int(output), hostname=MQTT_HOST, port=MQTT_PORT)
         else:
-            publish.single("core/edge/" + SDC_id + "/flow_control", "Controlling flow", hostname="163.180.117.37",
-                           port=1883)
+            print("Flow_control(Skip to send data)")
+            publish.single("core/edge/" + SDC_id + "/flow_control", "Controlling flow", hostname=MQTT_HOST,
+                           port=MQTT_PORT, qos=2)
+
+        feedback_list.append(feedback)
+        percentage_feedback_list.append(feedback / CACHE_MAX_SIZE * 100)
+        output_list.append(output)
+        percentage_output_list.append(output / CACHE_MAX_SIZE * 100)
+        setpoint_list.append(pid.setpoint)
+        percentage_setpoint_list.append(pid.setpoint / CACHE_MAX_SIZE * 100)
+        time_list.append(counter)
+
+        print("Counter: %s" % counter)
+
+    elif msg.topic == "core/edge/" + SDC_id + "/init_for_testing":
+        print("Initialize for testing")
+        feedback_list = []
+        percentage_feedback_list = []
+        output_list = []
+        percentage_output_list = []
+        time_list = []
+        setpoint_list = []
+        percentage_setpoint_list = []
+        scenario_counter = int(msg.payload)
+        print("Scenario Number: %s" % scenario_counter)
+
+        feedback = 0
+        counter = 0
+        pid.initialize(setpoint=CACHE_MAX_SIZE * 0.9, remaining_ratio_upto_the_max=0.1)
+        print("Setpoint: %s" % pid.setpoint)
+        pid.sample_time = SAMPLE_TIME
+        test_start_time = time.time()
+        feedback_list.append(0)
+        percentage_feedback_list.append(0)
+        output_list.append(0)
+        percentage_output_list.append(0)
+        setpoint_list.append(pid.setpoint)
+        percentage_setpoint_list.append(pid.setpoint / CACHE_MAX_SIZE * 100)
+        time_list.append(0)
+        publish.single("core/edge/" + SDC_id + "/start_testing", "Start!!", hostname=MQTT_HOST,
+                       port=MQTT_PORT, qos=2)
 
     elif msg.topic == "core/edge/" + SDC_id + "/done_to_test":
-        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!Test is finished")
+        print("A test is finished")
+        test_end_time = time.time()
+        file_name = str(scenario_counter) + "-" + time.strftime("%Y%m%d%H%M%S") + ".csv"
+        print(file_name)
+        full_path = os.path.join(os.path.join(".", "testlog"), file_name)
+        print(full_path)
+
+        error_square_list2 = [(percentage_feedback_list[i] - percentage_setpoint_list[i]) ** 2 for i in
+                              range(2, len(percentage_feedback_list))]
+        variance2 = sum(error_square_list2) / (len(percentage_feedback_list) - 2)
+        standard_deviation2 = variance2 ** 0.5
+
+        with open(full_path, 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
+            # print running time
+            writer.writerow([test_start_time, test_end_time, test_end_time - test_start_time])
+            # print variance and stdev
+            writer.writerow([variance2, standard_deviation2])
+            # print data
+            for idx in range(len(feedback_list)):
+                writer.writerow(
+                    [time_list[idx], percentage_feedback_list[idx], output_list[idx], percentage_setpoint_list[idx], feedback_list[idx],
+                     abs(feedback_list[idx] - pid.setpoint) / pid.setpoint * 100])
+        csvfile.close()
+
+        # scenario_counter = scenario_counter % 4 + 1
+
+    elif msg.topic == "core/edge/" + SDC_id + "/all_test_complete":
+        print("Test complete!!")
         is_finish = True
+
     else:
         print("Unknown - topic: " + msg.topic + ", message: " + message)
     lock.release()
@@ -153,8 +265,8 @@ def on_log(client, userdata, level, string):
 
 
 # The below lines will be used to publish the topics
-# publish.single("elevator/starting_floor_number", "3", hostname="163.180.117.195", port=1883)
-# publish.single("elevator/destination_floor_number", "2", hostname="163.180.117.195", port=1883)
+# publish.single("elevator/starting_floor_number", "3", hostname=MQTT_HOST, port=MQTT_PORT)
+# publish.single("elevator/destination_floor_number", "2", hostname=MQTT_HOST, port=MQTT_PORT)
 # ------------------------------------------------------------------------------------------------------------------#
 
 
@@ -166,7 +278,7 @@ if __name__ == "__main__":
     message_client.on_message = on_message
 
     # Connect to MQTT broker
-    message_client.connect("163.180.117.37", 1883, 60)
+    message_client.connect(MQTT_HOST, MQTT_PORT, 60)
 
     print("MQTT client start")
     message_client.loop_start()
@@ -175,30 +287,52 @@ if __name__ == "__main__":
     while not is_finish:
         time.sleep(0.001)
 
-    print(feedback_list)
-    print(time_list)
-    print(setpoint_list)
+    # print(percentage_feedback_list)
+    # print(time_list)
+    # print(percentage_setpoint_list)
+    #
+    # error_square_list = [(percentage_feedback_list[i] - percentage_setpoint_list[i]) ** 2 for i in
+    #                      range(2, len(percentage_feedback_list))]
+    # variance = sum(error_square_list) / (len(percentage_feedback_list) - 2)
+    # standard_deviation = variance ** 0.5
+    #
+    # print("Variance: %s" % variance)
+    # print("Standard deviation: %s" % standard_deviation)
+    #
+    # time_sm = np.array(time_list)
+    # time_smooth = np.linspace(time_sm.min(), time_sm.max(), 300)
 
-    time_sm = np.array(time_list)
-    time_smooth = np.linspace(time_sm.min(), time_sm.max(), 300)
+    ##################################
 
-    # feedback_smooth = spline(time_list, feedback_list, time_smooth)
+    # feedback_smooth = spline(time_list, percentage_list, time_smooth)
     # Using make_interp_spline to create BSpline
-    helper_x3 = make_interp_spline(time_list, feedback_list)
-    feedback_smooth = helper_x3(time_smooth)
 
-    plt.plot(time_smooth, feedback_smooth)
-    plt.plot(time_list, setpoint_list)
-    plt.xlim((1, counter))
-    # plt.ylim((min(feedback_list) - 0.5, max(feedback_list) + 0.5))
-    plt.xlabel('time (s)')
-    plt.ylabel('PID (PV)')
-    plt.title('TEST PID')
+    # Smooth graph
+    # helper_x3 = make_interp_spline(time_list, percentage_feedback_list)
+    # feedback_smooth = helper_x3(time_smooth)
+    #
+    # helper_x3 = make_interp_spline(time_list, percentage_output_list)
+    # output_smooth = helper_x3(time_smooth)
+    #
+    # plt.plot(time_smooth, feedback_smooth, marker='o', markersize=3, linestyle='-')
+    # plt.plot(time_smooth, output_smooth, marker='o', markersize=3, linestyle='-')
+    # plt.plot(time_list, percentage_setpoint_list)
 
-    # plt.ylim((1 - 0.5, 1 + 0.5))
-
-    plt.grid(True)
-    plt.show()
+    # # Real value graph
+    # plt.plot(time_list, percentage_feedback_list, marker='o', markersize=3, linestyle='-')
+    # plt.plot(time_list, percentage_output_list, marker='o', markersize=3, linestyle='-')
+    # plt.plot(time_list, percentage_setpoint_list)
+    #
+    # plt.xlim((1, counter))
+    # # plt.ylim((min(percentage_list) - 0.5, max(percentage_list) + 0.5))
+    # # plt.ylim(0, 100)
+    # plt.xlabel('Round no.')
+    # plt.ylabel('PID (PV)')
+    # plt.title('TEST PID')
+    #
+    # plt.grid(True)
+    # plt.show()
+    # # plt.ylim((1 - 0.5, 1 + 0.5))
 
     message_client.loop_stop()
     # Threads completely executed
