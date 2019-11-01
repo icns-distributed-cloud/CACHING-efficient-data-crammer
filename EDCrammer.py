@@ -63,9 +63,12 @@ MQTT_PORT = 1883
 # Gains from Internet : 1.2, 2, 0.001
 # My previous gains: 0.8, 3, 0.004
 # from CMU 3, 0.8, 0.7
-k_p = 0.7
-k_i = 0.5  # 0.45
-k_d = 0.7  # 1.5
+k_p = 1.0
+k_i = 0.0  # 0.45
+k_d = 0.0  # 1.5
+# k_p = 0.7
+# k_i = 0.5  # 0.45
+# k_d = 0.7  # 1.5
 L = 100
 
 CACHE_MAX_SIZE = (5 << 20)  # - (1 << 19)  # 1 << 19 == 512KB
