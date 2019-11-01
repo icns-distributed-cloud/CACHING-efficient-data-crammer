@@ -122,13 +122,15 @@ class PIDController:
             # error = feedback_value
             self._term_p = error
 
-            # compute term_i
-            # it includes avoiding excess_overshooting_threshold on the setter method
-            self._term_i += error * delta_time  # * delta_time or number of iteration(?)
+            if self.k_i != 0:
+                # compute term_i
+                # it includes avoiding excess_overshooting_threshold on the setter method
+                self._term_i += error * delta_time  # * delta_time or number of iteration(?)
 
-            # compute term_d
-            delta_error = error - self._last_error
-            self._term_d = delta_error / delta_time  # / delta_time or number of iteration(?)
+            if self.k_d != 0:
+                # compute term_d
+                delta_error = error - self._last_error
+                self._term_d = delta_error / delta_time  # / delta_time or number of iteration(?)
 
             self.output = self.k_p * self._term_p + (self.k_i * self._term_i) + (self.k_d * self._term_d)
 
@@ -151,22 +153,25 @@ class PIDController:
         # error = feedback_value
         self._term_p = error
 
-        # clamping term_i by the signs of current error and previous output, and output limit(over and under saturation)
-        if self._sign_of_last_output == np.sign(error) and self._is_reached_to_limit:
-            print("Clampping term_i")
-            if self._term_i < -self._overshooting_guard:
-                self._term_i = -self._overshooting_guard
-            if self._term_i > self._overshooting_guard:
-                self._term_i = self._overshooting_guard
-        # compute term_i
-        else:
-            print("Compute term_i")
-            self._term_i += error * self.delta_time  # * delta_time or number of iteration(?)
-            # print("error * delta_time: %s" % (error * self.delta_time))
+        if self.k_i != 0:
+            # clamping term_i by the signs of current error and previous output, and output limit(over and
+            # under saturation)
+            if self._sign_of_last_output == np.sign(error) and self._is_reached_to_limit:
+                print("Clampping term_i")
+                if self._term_i < -self._overshooting_guard:
+                    self._term_i = -self._overshooting_guard
+                if self._term_i > self._overshooting_guard:
+                    self._term_i = self._overshooting_guard
+            # compute term_i
+            else:
+                print("Compute term_i")
+                self._term_i += error * self.delta_time  # * delta_time or number of iteration(?)
+                # print("error * delta_time: %s" % (error * self.delta_time))
 
-        # compute term_d
-        delta_error = error - self._last_error
-        self._term_d = delta_error / self.delta_time  # / delta_time or number of iteration(?)
+        if self.k_d != 0:
+            # compute term_d
+            delta_error = error - self._last_error
+            self._term_d = delta_error / self.delta_time  # / delta_time or number of iteration(?)
 
         print("term_p: %s /// term_i: %s /// term_d: %s" % (self._term_p, self._term_i, self._term_d))
         self.output = self.k_p * self._term_p + (self.k_i * self._term_i) + (self.k_d * self._term_d)
@@ -222,13 +227,15 @@ class PIDController:
         # error = feedback_value
         self._term_p = error
 
-        # compute term_i
-        # it includes avoiding excess_overshooting_threshold on the setter method
-        self._term_i += error * delta_counter  # * delta_time or number of iteration(?)
+        if self.k_i != 0:
+            # compute term_i
+            # it includes avoiding excess_overshooting_threshold on the setter method
+            self._term_i += error * delta_counter  # * delta_time or number of iteration(?)
 
-        # compute term_d
-        delta_error = error - self._last_error
-        self._term_d = delta_error / delta_counter  # / delta_time or number of iteration(?)
+        if self.k_d != 0:
+            # compute term_d
+            delta_error = error - self._last_error
+            self._term_d = delta_error / delta_counter  # / delta_time or number of iteration(?)
 
         self.output = self.k_p * self._term_p + (self.k_i * self._term_i) + (self.k_d * self._term_d)
 
@@ -255,22 +262,25 @@ class PIDController:
         # error = feedback_value
         self._term_p = error
 
-        # clamping term_i by the signs of current error and previous output, and output limit(over and under saturation)
-        if self._sign_of_last_output == np.sign(error) and self._is_reached_to_limit:
-            print("Clampping term_i")
-            if self._term_i < -self._overshooting_guard:
-                self._term_i = -self._overshooting_guard
-            if self._term_i > self._overshooting_guard:
-                self._term_i = self._overshooting_guard
-        # compute term_i
-        else:
-            print("Compute term_i")
-            self._term_i += error  # / delta_counter * delta_time or number of iteration(?)
-            # print("error * delta_time: %s" % (error * self.delta_time))
+        if self.k_i != 0:
+            # clamping term_i by the signs of current error and previous output, and output limit(over and
+            # under saturation)
+            if self._sign_of_last_output == np.sign(error) and self._is_reached_to_limit:
+                print("Clampping term_i")
+                if self._term_i < -self._overshooting_guard:
+                    self._term_i = -self._overshooting_guard
+                if self._term_i > self._overshooting_guard:
+                    self._term_i = self._overshooting_guard
+            # compute term_i
+            else:
+                print("Compute term_i")
+                self._term_i += error  # / delta_counter * delta_time or number of iteration(?)
+                # print("error * delta_time: %s" % (error * self.delta_time))
 
-        # compute term_d
-        delta_error = error - self._last_error
-        self._term_d = delta_error / delta_counter  # / delta_time or number of iteration(?)
+        if self.k_i != 0:
+            # compute term_d
+            delta_error = error - self._last_error
+            self._term_d = delta_error / delta_counter  # / delta_time or number of iteration(?)
 
         print("term_p: %s /// term_i: %s /// term_d: %s" % (self._term_p, self._term_i, self._term_d))
         self.output = self.k_p * self._term_p + (self.k_i * self._term_i) + (self.k_d * self._term_d)
@@ -312,22 +322,25 @@ class PIDController:
         # error = feedback_value
         self._term_p = error
 
-        # clamping term_i by the signs of current error and previous output, and output limit(over and under saturation)
-        if self._sign_of_last_output == np.sign(error) and self._is_reached_to_limit:
-            print("Clampping term_i")
-            if self._term_i < -self._overshooting_guard:
-                self._term_i = -self._overshooting_guard
-            if self._term_i > self._overshooting_guard:
-                self._term_i = self._overshooting_guard
-        # compute term_i
-        else:
-            print("Compute term_i")
-            self._term_i += error  # / delta_counter * delta_time or number of iteration(?)
-            # print("error * delta_time: %s" % (error * self.delta_time))
+        if self.k_i != 0:
+            # clamping term_i by the signs of current error and previous output, and output limit(over and
+            # under saturation)
+            if self._sign_of_last_output == np.sign(error) and self._is_reached_to_limit:
+                print("Clampping term_i")
+                if self._term_i < -self._overshooting_guard:
+                    self._term_i = -self._overshooting_guard
+                if self._term_i > self._overshooting_guard:
+                    self._term_i = self._overshooting_guard
+            # compute term_i
+            else:
+                print("Compute term_i")
+                self._term_i += error  # / delta_counter * delta_time or number of iteration(?)
+                # print("error * delta_time: %s" % (error * self.delta_time))
 
-        # compute term_d
-        delta_error = error - self._last_error
-        self._term_d = delta_error / delta_counter  # / delta_time or number of iteration(?)
+        if self.k_d != 0:
+            # compute term_d
+            delta_error = error - self._last_error
+            self._term_d = delta_error / delta_counter  # / delta_time or number of iteration(?)
 
         print("term_p: %s /// term_i: %s /// term_d: %s" % (self._term_p, self._term_i, self._term_d))
         self.output = self.k_p * self._term_p + (self.k_i * self._term_i) + (self.k_d * self._term_d)
@@ -391,22 +404,25 @@ class PIDController:
         # error = feedback_value
         self._term_p = error
 
-        # clamping term_i by the signs of current error and previous output, and output limit(over and under saturation)
-        if self._sign_of_last_output == np.sign(error) and self._is_reached_to_limit:
-            print("Clampping term_i")
-            if self._term_i < -self._overshooting_guard:
-                self._term_i = -self._overshooting_guard
-            if self._term_i > self._overshooting_guard:
-                self._term_i = self._overshooting_guard
-        # compute term_i
-        else:
-            print("Compute term_i")
-            self._term_i += error  # / delta_counter * delta_time or number of iteration(?)
-            # print("error * delta_time: %s" % (error * self.delta_time))
+        if self.k_i != 0:
+            # clamping term_i by the signs of current error and previous output, and output limit(over and
+            # under saturation)
+            if self._sign_of_last_output == np.sign(error) and self._is_reached_to_limit:
+                print("Clampping term_i")
+                if self._term_i < -self._overshooting_guard:
+                    self._term_i = -self._overshooting_guard
+                if self._term_i > self._overshooting_guard:
+                    self._term_i = self._overshooting_guard
+            # compute term_i
+            else:
+                print("Compute term_i")
+                self._term_i += error  # / delta_counter * delta_time or number of iteration(?)
+                # print("error * delta_time: %s" % (error * self.delta_time))
 
-        # compute term_d
-        delta_error = error - self._last_error
-        self._term_d = delta_error / delta_counter  # / delta_time or number of iteration(?)
+        if self.k_d != 0:
+            # compute term_d
+            delta_error = error - self._last_error
+            self._term_d = delta_error / delta_counter  # / delta_time or number of iteration(?)
 
         print("term_p: %s /// term_i: %s /// term_d: %s" % (self._term_p, self._term_i, self._term_d))
         self.output = self.k_p * self._term_p + (self.k_i * self._term_i) + (self.k_d * self._term_d)
