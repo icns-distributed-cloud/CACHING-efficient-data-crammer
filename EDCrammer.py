@@ -353,13 +353,14 @@ def on_message(client, userdata, msg):
             f = open("100MB.zip", "rb")
             data = f.read(int(output))
             print("Cram %s of data" % len(data))
+            time.sleep(0.01)
             publish.single("core/edge/" + SDC_id + "/data", data, hostname=MQTT_HOST, port=MQTT_PORT, qos=2)
 
             # print("Cram %s of data" % int(output))
             # publish.single("core/edge/" + SDC_id + "/data", int(output), hostname=MQTT_HOST, port=MQTT_PORT)
         else:
             print("Flow_control(Skip to send data)")
-            time.sleep(0.03)
+            # time.sleep(0.03)
             publish.single("core/edge/" + SDC_id + "/flow_control", "Controlling flow", hostname=MQTT_HOST,
                            port=MQTT_PORT, qos=2)
 
