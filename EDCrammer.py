@@ -263,10 +263,16 @@ def on_message(client, userdata, msg):
 
             # Get the moving average of the amount of consumed data (acd)
             long_term_ma_acd = sum(long_term_list_acd.list) / len(long_term_list_acd.list)
-            # max_ma_acd = max(list_acd.list)
 
-            # Set threshold (Minimum threshold of cache size)
-            cache_max_size_threshold = long_term_ma_acd * (1 + long_term_ma_dcr)
+            # By average, set threshold (Minimum threshold of cache size)
+            # cache_max_size_threshold = long_term_ma_acd * (1 + long_term_ma_dcr)
+
+            # By maximum, set threshold (Minimum threshold of cache size)
+            max_ma_acd = max(long_term_list_acd.list)
+            max_ma_dcr = max(long_term_list_dcr.list)
+            cache_max_size_threshold = max_ma_acd * (1 + max_ma_dcr)
+            print("cache_max_size_threshold (%s) = max_ma_acd (%s) * (1 + max_ma_dcr (%s))" %
+                  (format(cache_max_size_threshold, ","), format(max_ma_acd, ","), format(max_ma_dcr, ",")))
 
             # RSME: Root Mean Square Error, In this case, n is 7
             error_ratio_quared = [er ** 2 for er in long_term_list_error_ratio.list]
@@ -353,6 +359,7 @@ def on_message(client, userdata, msg):
             # publish.single("core/edge/" + SDC_id + "/data", int(output), hostname=MQTT_HOST, port=MQTT_PORT)
         else:
             print("Flow_control(Skip to send data)")
+            time.sleep(0.03)
             publish.single("core/edge/" + SDC_id + "/flow_control", "Controlling flow", hostname=MQTT_HOST,
                            port=MQTT_PORT, qos=2)
 
