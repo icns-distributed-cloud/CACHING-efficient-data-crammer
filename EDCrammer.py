@@ -227,6 +227,9 @@ def on_message(client, userdata, msg):
         # line1 = lp.live_plotter(x_vec, y_vec, line1)
         # y_vec = np.append(y_vec[1:], 0.0)
 
+        # save previous cache_max_size
+        pre_cache_max_size = cache_max_size
+
         if global_counter > 1:
             # 1. estimate the amount of consumed data (acd)
             acd = float(last_feedback + last_output - feedback)
@@ -241,7 +244,7 @@ def on_message(client, userdata, msg):
             # print(list_acd.list)
 
             # 2. estimate data consumption rate (dcr)
-            dcr = float(acd / cache_max_size)
+            dcr = float(acd / pre_cache_max_size)
             short_term_list_dcr.put(dcr)
             # print(short_term_list_dcr.list)
             long_term_list_dcr.put(dcr)
@@ -280,9 +283,6 @@ def on_message(client, userdata, msg):
             rsme_val = np.sqrt(mean_of_error_ratio_quared)
             print("rsme_val: %s(%%)" % rsme_val)
 
-            # save previous cache_max_size
-            pre_cache_max_size = cache_max_size
-
             # It shows an downward tread when short-term average is smaller than long-term average.
             # 매번 바뀌면 안됨! 뭔가 장치가 필요함!!
             if short_term_ma_dcr < long_term_ma_dcr and max_acd < cache_max_size and rsme_val < 5:
@@ -309,19 +309,19 @@ def on_message(client, userdata, msg):
                 #                                   remaining_ratio_upto_the_max=0.1)
                 # counter = 0
             # elif short_term_ma_dcr > long_term_ma_dcr and max_acd > cache_max_size and rsme_val > 7:
-            elif cache_max_size < cache_max_size_threshold:
-                print("========== cache_max_size is lower than cache_max_size_threshold! Cache capacity auto-scaling")
-                cache_max_size = cache_max_size_threshold
-
-                setpoint = cache_max_size * 0.9
-                pid.setpoint = setpoint
-                pid.pid_output_max = cache_max_size
-                # pid.initialize(setpoint=setpoint, pid_output_max=cache_max_size, pid_output_min=0)
-                # # keep current error, global_counter, and pid_output
-                # pid.last_error = error
-                # pid.last_counter = global_counter
-                # pid.last_pid_output = output
-                counter_for_cache_auto_scaling = 0
+            # elif cache_max_size < cache_max_size_threshold:
+            #     print("========== cache_max_size is lower than cache_max_size_threshold! Cache capacity auto-scaling")
+            #     cache_max_size = cache_max_size_threshold
+            #
+            #     setpoint = cache_max_size * 0.9
+            #     pid.setpoint = setpoint
+            #     pid.pid_output_max = cache_max_size
+            #     # pid.initialize(setpoint=setpoint, pid_output_max=cache_max_size, pid_output_min=0)
+            #     # # keep current error, global_counter, and pid_output
+            #     # pid.last_error = error
+            #     # pid.last_counter = global_counter
+            #     # pid.last_pid_output = output
+            #     counter_for_cache_auto_scaling = 0
             else:
                 print("Short_term_ma_dcr (%s), long_term_ma_dcr (%s), max_acd (%s), cache_max_size (%s)" %
                       (short_term_ma_dcr, long_term_ma_dcr, max_acd, cache_max_size))
