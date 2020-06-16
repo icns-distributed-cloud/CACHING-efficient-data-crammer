@@ -213,10 +213,28 @@ def on_message(client, userdata, msg):
 
         last_output = pid.last_pid_output
         pid.cyclic_compute_for_cache_capacity_auto_scaling(error, global_counter)
+        # out, interval = pid.cyclic_compute_with_rate_of_change(error, global_counter)
         output = pid.pid_output
 
+        # # Low pass filter
+        # output = error
+        # if output > low_pass_filter_threshold:
+        #     output = low_pass_filter_threshold
+
+        low_pass_filter_list.put(output)
+        if global_counter > 3:
+            output = sum(low_pass_filter_list.list) / len(low_pass_filter_list.list)
+
+        # live plot
+        # rand_val = np.random.randint(0, (5 << 20))
         print("current feedback: %s,   current pid_output: %s,   current cache_max_size: %s" %
               (format(feedback, ","), format(output, ","), format(cache_max_size, ",")))
+        # print("pid_output: %s" % format(output, ","))
+
+        # Live plot for testing
+        # y_vec[-1] = float(feedback) / pre_cache_max_size * 100  # output
+        # line1 = lp.live_plotter(x_vec, y_vec, line1)
+        # y_vec = np.append(y_vec[1:], 0.0)
 
         # save previous cache_max_size
         pre_cache_max_size = cache_max_size
@@ -225,102 +243,102 @@ def on_message(client, userdata, msg):
 
         # ======================================
         # ========== Cache capacity auto-scaling
-        if global_counter > 1:
-            # 1. estimate the amount of consumed data (acd)
-            acd = float(last_feedback + last_output - feedback)
-            print("last_feedback (%s) + last_output (%s) - feedback (%s) = The amount of consumed data (%s)" %
-                  (format(last_feedback, ","), format(last_output, ","), format(feedback, ","), format(acd, ",")))
-
-            # Save current feedback
-            last_feedback = feedback
-
-            # put the acd in the list
-            long_term_list_acd.put(acd)
-            # print(list_acd.list)
-
-            # 2. estimate data consumption rate (dcr)
-            dcr = float(acd / pre_cache_max_size)
-            short_term_list_dcr.put(dcr)
-            # print(short_term_list_dcr.list)
-            long_term_list_dcr.put(dcr)
-            # print(long_term_list_dcr.list)
-
-            # Previously the maximum of the amount of consumed data in range of n was used,
-            # BUT it is not proper to react to sudden change
-            # n_max = max(list_acd.list)
-
-            # Get Maximum value in range of n in the list of the amount of consumed data (acd)
-            if acd > max_acd:
-                max_acd = acd
-
-        if counter_for_cache_auto_scaling > 8:
-
-            # Get short-term and long-term moving averages of data consumption rate (dcr)
-            short_term_ma_dcr = sum(short_term_list_dcr.list) / len(short_term_list_dcr.list)
-            long_term_ma_dcr = sum(long_term_list_dcr.list) / len(long_term_list_dcr.list)
-
-            # Get the moving average of the amount of consumed data (acd)
-            long_term_ma_acd = sum(long_term_list_acd.list) / len(long_term_list_acd.list)
-
-            # By average, set threshold (Minimum threshold of cache size)
-            # cache_max_size_threshold = long_term_ma_acd * (1 + long_term_ma_dcr)
-
-            # By maximum, set threshold (Minimum threshold of cache size)
-            max_ma_acd = max(long_term_list_acd.list)
-            max_ma_dcr = max(long_term_list_dcr.list)
-            cache_max_size_threshold = max_ma_acd * (1 + max_ma_dcr)
-            print("cache_max_size_threshold (%s) = max_ma_acd (%s) * (1 + max_ma_dcr (%s))" %
-                  (format(cache_max_size_threshold, ","), format(max_ma_acd, ","), format(max_ma_dcr, ",")))
-
-            # RSME: Root Mean Square Error, In this case, n is 7
-            error_ratio_squared = [er ** 2 for er in long_term_list_error_ratio.list]
-            mean_of_error_ratio_squared = sum(error_ratio_squared) / len(error_ratio_squared)
-            rsme_val = np.sqrt(mean_of_error_ratio_squared)
-            print("rsme_val: %s(%%)" % rsme_val)
-
-            # It shows an downward tread when short-term average is smaller than long-term average.
-            # 매번 바뀌면 안되므로 장치가 필요함!!
-            if short_term_ma_dcr < long_term_ma_dcr and max_acd < cache_max_size and rsme_val < 5:
-                print("========== Data consumption rate is downward trend! Cache capacity auto-scaling"
-                      "(cache_max_size_threshold: %s,  ma_acd: %s)" %
-                      (format(cache_max_size_threshold, ","), format(long_term_ma_acd, ",")))
-                cache_max_size = cache_max_size - (cache_max_size - long_term_ma_acd) * 0.5
-                # cache_max_size = cache_max_size - ma_acd
-                if cache_max_size < cache_max_size_threshold:
-                    cache_max_size = cache_max_size_threshold
-
-                setpoint = cache_max_size * 0.9
-                pid.setpoint = setpoint
-                pid.pid_output_max = cache_max_size
-                # pid.initialize(setpoint=setpoint * 0.9, pid_output_max=cache_max_size, pid_output_min=0)
-                # # keep current error, global_counter, and pid_output
-                # pid.last_error = error
-                # pid.last_counter = global_counter
-                # pid.last_pid_output = output
-                counter_for_cache_auto_scaling = 0
-
-                # pid = PIDController.PIDController(k_p=k_p, k_i=k_i, k_d=k_d, setpoint=cache_max_size * 0.9,
-                #                                   remaining_ratio_upto_the_max=0.1)
-                # counter = 0
-            # elif short_term_ma_dcr > long_term_ma_dcr and max_acd > cache_max_size and rsme_val > 7:
-            # elif cache_max_size < cache_max_size_threshold:
-            #     print("========== cache_max_size is lower than cache_max_size_threshold! Cache capacity auto-scaling")
-            #     cache_max_size = cache_max_size_threshold
-            #
-            #     pre_setpoint = setpoint
-            #
-            #     setpoint = cache_max_size * 0.9
-            #     pid.setpoint = setpoint
-            #     pid.pid_output_max = cache_max_size
-            #     # pid.initialize(setpoint=setpoint, pid_output_max=cache_max_size, pid_output_min=0)
-            #     # # keep current error, global_counter, and pid_output
-            #     # pid.last_error = error
-            #     # pid.last_counter = global_counter
-            #     # pid.last_pid_output = output
-            #     counter_for_cache_auto_scaling = 0
-            else:
-                print("Short_term_ma_dcr (%s), long_term_ma_dcr (%s), max_acd (%s), cache_max_size (%s)" %
-                      (short_term_ma_dcr, long_term_ma_dcr, max_acd, cache_max_size))
+        # if global_counter > 1:
+        #     # 1. estimate the amount of consumed data (acd)
+        #     acd = float(last_feedback + last_output - feedback)
+        #     print("last_feedback (%s) + last_output (%s) - feedback (%s) = The amount of consumed data (%s)" %
+        #           (format(last_feedback, ","), format(last_output, ","), format(feedback, ","), format(acd, ",")))
+        #
+        #     # Save current feedback
+        #     last_feedback = feedback
+        #
+        #     # put the acd in the list
+        #     long_term_list_acd.put(acd)
+        #     # print(list_acd.list)
+        #
+        #     # 2. estimate data consumption rate (dcr)
+        #     dcr = float(acd / pre_cache_max_size)
+        #     short_term_list_dcr.put(dcr)
+        #     # print(short_term_list_dcr.list)
+        #     long_term_list_dcr.put(dcr)
+        #     # print(long_term_list_dcr.list)
+        #
+        #     # Previously the maximum of the amount of consumed data in range of n was used,
+        #     # BUT it is not proper to react to sudden change
+        #     # n_max = max(list_acd.list)
+        #
+        #     # Get Maximum value in range of n in the list of the amount of consumed data (acd)
+        #     if acd > max_acd:
+        #         max_acd = acd
+        #
+        # if counter_for_cache_auto_scaling > 8:
+        #
+        #     # Get short-term and long-term moving averages of data consumption rate (dcr)
+        #     short_term_ma_dcr = sum(short_term_list_dcr.list) / len(short_term_list_dcr.list)
+        #     long_term_ma_dcr = sum(long_term_list_dcr.list) / len(long_term_list_dcr.list)
+        #
+        #     # Get the moving average of the amount of consumed data (acd)
+        #     long_term_ma_acd = sum(long_term_list_acd.list) / len(long_term_list_acd.list)
+        #
+        #     # By average, set threshold (Minimum threshold of cache size)
+        #     # cache_max_size_threshold = long_term_ma_acd * (1 + long_term_ma_dcr)
+        #
+        #     # By maximum, set threshold (Minimum threshold of cache size)
+        #     max_ma_acd = max(long_term_list_acd.list)
+        #     max_ma_dcr = max(long_term_list_dcr.list)
+        #     cache_max_size_threshold = max_ma_acd * (1 + max_ma_dcr)
+        #     print("cache_max_size_threshold (%s) = max_ma_acd (%s) * (1 + max_ma_dcr (%s))" %
+        #           (format(cache_max_size_threshold, ","), format(max_ma_acd, ","), format(max_ma_dcr, ",")))
+        #
+        #     # RSME: Root Mean Square Error, In this case, n is 7
+        #     error_ratio_squared = [er ** 2 for er in long_term_list_error_ratio.list]
+        #     mean_of_error_ratio_squared = sum(error_ratio_squared) / len(error_ratio_squared)
+        #     rsme_val = np.sqrt(mean_of_error_ratio_squared)
+        #     print("rsme_val: %s(%%)" % rsme_val)
+        #
+        #     # It shows an downward tread when short-term average is smaller than long-term average.
+        #     # 매번 바뀌면 안됨! 뭔가 장치가 필요함!!
+        #     if short_term_ma_dcr < long_term_ma_dcr and max_acd < cache_max_size and rsme_val < 5:
+        #         print("========== Data consumption rate is downward trend! Cache capacity auto-scaling"
+        #               "(cache_max_size_threshold: %s,  ma_acd: %s)" %
+        #               (format(cache_max_size_threshold, ","), format(long_term_ma_acd, ",")))
+        #         cache_max_size = cache_max_size - (cache_max_size - long_term_ma_acd) * 0.5
+        #         # cache_max_size = cache_max_size - ma_acd
+        #         if cache_max_size < cache_max_size_threshold:
+        #             cache_max_size = cache_max_size_threshold
+        #
+        #         setpoint = cache_max_size * 0.9
+        #         pid.setpoint = setpoint
+        #         pid.pid_output_max = cache_max_size
+        #         # pid.initialize(setpoint=setpoint * 0.9, pid_output_max=cache_max_size, pid_output_min=0)
+        #         # # keep current error, global_counter, and pid_output
+        #         # pid.last_error = error
+        #         # pid.last_counter = global_counter
+        #         # pid.last_pid_output = output
+        #         counter_for_cache_auto_scaling = 0
+        #
+        #         # pid = PIDController.PIDController(k_p=k_p, k_i=k_i, k_d=k_d, setpoint=cache_max_size * 0.9,
+        #         #                                   remaining_ratio_upto_the_max=0.1)
+        #         # counter = 0
+        #     # elif short_term_ma_dcr > long_term_ma_dcr and max_acd > cache_max_size and rsme_val > 7:
+        #     # elif cache_max_size < cache_max_size_threshold:
+        #     #     print("========== cache_max_size is lower than cache_max_size_threshold! Cache capacity auto-scaling")
+        #     #     cache_max_size = cache_max_size_threshold
+        #     #
+        #     #     pre_setpoint = setpoint
+        #     #
+        #     #     setpoint = cache_max_size * 0.9
+        #     #     pid.setpoint = setpoint
+        #     #     pid.pid_output_max = cache_max_size
+        #     #     # pid.initialize(setpoint=setpoint, pid_output_max=cache_max_size, pid_output_min=0)
+        #     #     # # keep current error, global_counter, and pid_output
+        #     #     # pid.last_error = error
+        #     #     # pid.last_counter = global_counter
+        #     #     # pid.last_pid_output = output
+        #     #     counter_for_cache_auto_scaling = 0
+        #     else:
+        #         print("Short_term_ma_dcr (%s), long_term_ma_dcr (%s), max_acd (%s), cache_max_size (%s)" %
+        #               (short_term_ma_dcr, long_term_ma_dcr, max_acd, cache_max_size))
 
         # if interval != 0.0:
         #     time.sleep(interval)

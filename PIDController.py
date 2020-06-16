@@ -77,6 +77,8 @@ class PIDController:
         self._term_d = 0.0
         self._last_error = 0.0
 
+        self._control_interval = 0.01
+
         self._pid_output = 0.0
         self._last_pid_output = 0.0
         self._sign_of_last_output = None
@@ -100,6 +102,8 @@ class PIDController:
         self._term_i = 0.0
         self._term_d = 0.0
         self._last_error = 0.0
+
+        self._control_interval = 0.01
 
         self._pid_output = 0.0
         self._last_pid_output = 0.0
@@ -297,85 +301,57 @@ class PIDController:
 
         return self.pid_output
 
-    def cyclic_compute_with_rate_of_change(self, feedback_value, counter):
+    def cyclic_compute_with_rate_of_change(self, error, counter):
         """Calculates PID value for given reference feedback
            The formula is shown in PID controller from Wikipedia (https://en.wikipedia.org/wiki/PID_controller)
         """
 
         delta_counter = counter - self.last_counter  # time or number of iteration
-        self.last_pid_output = self.pid_output
 
-        # self.current_time = time.time()
-        # self.delta_time = self.current_time - self.last_time  # time or number of iteration
-
-        # if self.delta_time >= self.sample_time:
-        # compute term_p
-        error = float(self.setpoint) - feedback_value  # / delta_counter  # * delta_time
-        # error = feedback_value
         self.term_p = error
 
         if self.k_i != 0:
             # clamping term_i by the signs of current error and previous output, and output limit(over and
             # under saturation)
-            if self.sign_of_last_output == np.sign(error) and self._is_reached_to_limit:
-                print("Clampping term_i")
-                if self.term_i < -self._overshooting_guard:
-                    self.term_i = -self._overshooting_guard
-                if self.term_i > self._overshooting_guard:
-                    self.term_i = self._overshooting_guard
-            # compute term_i
-            else:
-                print("Compute term_i")
-                self.term_i += error  # / delta_counter * delta_time or number of iteration(?)
-                # print("error * delta_time: %s" % (error * self.delta_time))
+            self.term_i += error  # / delta_counter * delta_time or number of iteration(?)
 
         if self.k_d != 0:
             # compute term_d
             delta_error = error - self.last_error
             self.term_d = delta_error / delta_counter  # / delta_time or number of iteration(?)
 
-        print("term_p: %s /// term_i: %s /// term_d: %s" % (self.term_p, self.term_i, self.term_d))
         self.pid_output = self.k_p * self.term_p + (self.k_i * self.term_i) + (self.k_d * self.term_d)
-        print("self.pid_output: %s" % self.pid_output)
+        # print("Kp * term_p: %s * %s (%s)    Ki * term_i: %s * %s (%s)    Kd * term_d: %s * %s (%s)" %
+        #       (format(self.k_p, ","), format(self.term_p, ","), format(self.k_p * self.term_p, ","),
+        #        format(self.k_i, ","), format(self.term_i, ","), format(self.k_i * self.term_i, ","),
+        #        format(self.k_d, ","), format(self.term_d, ","), format(self.k_d * self.term_d, ",")))
 
-        # Little change(Stable): abs(self.pid_output - self.last_pid_output) > self.term_i * error
-        # Much change(Unstable): abs(self.pid_output - self.last_pid_output) <= self.term_i * error
-        # Remember last counter and last error for next calculation, or no change
-        print("delta_counter: %s" % delta_counter)
-        # print("abs(u(k) - u(k-1)): %s" % abs(self.pid_output - self.last_pid_output))
-        # print("k_i * error: %s " % (self.k_i * error))
-
-        # skip at the first round
-        if counter != 1:
-            # significant change in a system
+        if counter > 1:
+            # Significant change in a system
             if abs(self.pid_output - self.last_pid_output) > self.k_i * error:
-                print("SIGNIFICANT CHANGE")
-                self.last_error = error
-                self.last_counter = counter
-            # if abs(self.pid_output - self.last_pid_output) > self.setpoint * self.k_d / 100:
-            #     print("SIGNIFICANT CHANGE")
-            #     self.last_error = error
-            #     self.last_counter = counter
+                print("Unsteady state: pid_output ( %s ) - last_pid_output ( %s ) > k_i * error ( %s )" %
+                      (format(self.pid_output, ","), format(self.last_pid_output, ","), format(self.k_i * error, ",")))
+                # NEED TO CHANGE CACHING INTERVAL (MAKE IT SHORTER) !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                self._control_interval = 0.01
 
             # Not much change change in a system
             else:
-                print("NOT MUCH CHANGE")
-                # keep last state (last_error, last_time, pid_output)
-                self.pid_output = self.last_pid_output
-        else:
-            self.last_error = error
-            self.last_counter = counter
+                print("Steady state: pid_output ( %s ) - last_pid_output ( %s ) <= k_i * error ( %s )" %
+                      (format(self.pid_output, ","), format(self.last_pid_output, ","), format(self.k_i * error, ",")))
+                # NEED TO CHANGE CACHING INTERVAL (MAKE IT LONGER) !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                self._control_interval += 0.01
 
-        # self.last_error = error
+        self.last_error = error
+        self.last_counter = counter
+        self.last_pid_output = self.pid_output
+
+        # self.sign_of_last_output = np.sign(self.pid_output)
         #
-        # # Remember last time and last error for next calculation
-        # self.last_counter = self.last_counter
-        # self.last_error = error
-        self.sign_of_last_output = np.sign(self.pid_output)
+        # self.clamp_output_limit()
 
-        self.clamp_output_limit()
+        # print("Done to compute")
 
-        return self.pid_output
+        return self.pid_output, self._control_interval
 
     def cyclic_compute_with_rate_of_change2(self, feedback_value, counter):
         """Calculates PID value for given reference feedback
@@ -493,13 +469,10 @@ class PIDController:
                 if (self.pid_output_max is not None) and (self.pid_output_min is not None):
                     self.avoid_saturation(error)
 
-                # NEED TO CHANGE CACHING INTERVAL (MAKE IT SHORTER) !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
             # Not much change change in a system
             else:
                 print("Steady state: pid_output ( %s ) - last_pid_output ( %s ) <= k_i * error ( %s )" %
                       (format(self.pid_output, ","), format(self.last_pid_output, ","), format(self.k_i * error, ",")))
-                # NEED TO CHANGE CACHING INTERVAL (MAKE IT LONGER) !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
         self.last_error = error
         self.last_counter = counter
@@ -510,7 +483,7 @@ class PIDController:
         # self.clamp_output_limit()
 
         # print("Done to compute")
-        return self.pid_output
+        return self.pid_output, self._control_interval
 
     def avoid_saturation(self, error):
         is_reached_to_limit = False
